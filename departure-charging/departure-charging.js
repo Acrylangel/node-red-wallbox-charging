@@ -15,7 +15,10 @@
 //
 // Output 1: msg.payload = charge current in A (0 = pause, else MIN_A..MAX_A)
 //           -> rate limit -> wallbox current setpoint (e.g. knx-ultimate, DPT 14.019)
-// Output 2: msg.payload = one-line status text, msg.detail = status object
+// Output 2: msg.payload = short status with Font Awesome icon (HTML, for a ui_text row),
+//           msg.text = the same without icon, msg.detail = full calculation
+// Output 3: msg.topic "departure", msg.payload "HH:MM" = the departure in effect, sent on every
+//           run so the dashboard input shows it (also after a restart of either node)
 // ============================================================================
 
 const CFG = {
@@ -46,6 +49,18 @@ const CFG = {
 };
 
 const PLUGGED = ["B", "C", "D"];
+
+// Dashboard summary: icon classes work with Font Awesome 4 (dashboard default) and 6.
+// The dashboard strips style attributes from ui_text HTML, so colours come from the
+// dc-state-* classes defined in dashboard/departure-input.html.
+const LOOK = {
+    wait: "fa fa-clock fa-clock-o dc-state-wait",
+    charge: "fa fa-bolt dc-state-ok",
+    done: "fa fa-check dc-state-ok",
+    late: "fa fa-exclamation-triangle dc-state-bad",
+    manual: "fa fa-hand fa-hand-paper-o dc-state-off",
+    unplugged: "fa fa-plug dc-state-off",
+};
 
 // --- time zone helpers ------------------------------------------------------
 const fmt = new Intl.DateTimeFormat("en-US", {
@@ -165,17 +180,24 @@ const depTs = nextDepartureTs();
 const detail = { wallbox: s.wallbox, enabled: s.enabled, soc: s.soc, target, departure: new Date(depTs).toISOString() };
 let amps = null;
 let reason;
+let look;
+let short;
 
 if (!s.enabled) {
     reason = "smart charging off (manual)";
+    look = LOOK.manual; short = "Manual";
 } else if (!PLUGGED.includes(s.wallbox)) {
     reason = s.wallbox === null ? "waiting for wallbox status" : "not plugged in";
+    look = LOOK.unplugged; short = s.wallbox === null ? "No wallbox data" : "Unplugged";
 } else if (socEst === null && now - s.pluggedTs < CFG.SOC_WAIT_MIN * 60000) {
     amps = 0; reason = "waiting for SoC";
+    look = LOOK.wait; short = "Waiting for SoC";
 } else if (socEst === null) {
     amps = CFG.MAX_A; reason = "SoC unknown, full speed";
+    look = LOOK.charge; short = `${amps} A · no SoC`;
 } else if (socEst >= target) {
     amps = CFG.MIN_A; reason = "target reached";
+    look = LOOK.done; short = "Full";
 } else {
     const needKwh = (target - socEst) / 100 * CFG.CAPACITY_KWH / CFG.EFFICIENCY;
     const hoursLeft = (depTs - now - CFG.BUFFER_MIN * 60000) / 3600000;
@@ -190,6 +212,12 @@ if (!s.enabled) {
         amps = CFG.MAX_A;
         detail.late = needKwh - Math.max(0, hoursLeft) * ampsToKw(CFG.MAX_A) > 0.1;
         reason = detail.late ? "full speed, will be late" : "full speed, tight";
+        if (detail.late) {
+            const hoursToDeparture = Math.max(0, (depTs - now) / 3600000);
+            detail.socAtDeparture = Math.floor(Math.min(100,
+                socEst + hoursToDeparture * ampsToKw(CFG.MAX_A) * CFG.EFFICIENCY / CFG.CAPACITY_KWH * 100));
+            look = LOOK.late; short = `${detail.socAtDeparture} % at ${hhmm(depTs)}`;
+        }
     } else {
         const reqA = needKwh / hoursLeft * 1000 / (CFG.PHASES * CFG.VOLTAGE);
         const last = s.lastSent || 0;
@@ -202,6 +230,7 @@ if (!s.enabled) {
                 amps = 0;
                 detail.plannedStart = hhmm(depTs - (CFG.BUFFER_MIN / 60 + hoursAtMin) * 3600000);
                 reason = `waiting, start ~${detail.plannedStart}`;
+                look = LOOK.wait; short = `Start ${detail.plannedStart}`;
             } else {
                 amps = CFG.MIN_A; reason = "starting at minimum current";
             }
@@ -210,19 +239,26 @@ if (!s.enabled) {
         }
     }
     if (amps > 0) s.started = true;
+    if (amps > 0 && !look) {
+        detail.fullAt = hhmm(now + needKwh / ampsToKw(amps) * 3600000);
+        look = LOOK.charge; short = `${amps} A · full ${detail.fullAt}`;
+    }
 }
 
 detail.measuredA = s.measuredA;
 detail.socEst = socEst === null ? null : +socEst.toFixed(1);
 detail.amps = amps;
 detail.reason = reason;
-const text = `${amps ?? "–"} A · ${reason} · SoC ${detail.socEst ?? "?"} % → ${target} % by ${hhmm(depTs)}`;
-node.status({ fill: amps === 0 ? "yellow" : amps ? "green" : "grey", shape: "dot", text });
+detail.summary = `${amps ?? "–"} A · ${reason} · SoC ${detail.socEst ?? "?"} % → ${target} % by ${hhmm(depTs)}`;
+node.status({ fill: amps === 0 ? "yellow" : amps ? "green" : "grey", shape: "dot", text: detail.summary });
+const html = `<i class="${look}" aria-hidden="true"></i> ${short}`;
 
 let out1 = null;
 if (amps !== null && amps !== s.lastSent) {
     out1 = { topic: "wallbox.set_current", payload: amps };
     s.lastSent = amps;
 }
+const d = s.departure || parseDeparture(CFG.DEFAULT_DEPARTURE);
+const out3 = { topic: "departure", payload: `${String(d.h).padStart(2, "0")}:${String(d.m).padStart(2, "0")}` };
 context.set("s", s);
-return [out1, { topic: "departure_charging.status", payload: text, detail }];
+return [out1, { topic: "departure_charging.status", payload: html, text: short, detail }, out3];

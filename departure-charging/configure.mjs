@@ -7,7 +7,7 @@
 //   node departure-charging/configure.mjs <export.json> [options]
 //
 // Options:
-//   --out <file>          output file (default: departure-charging/flow.local.json — gitignored)
+//   --out <file>          output file (default: .local/flow.local.json — gitignored)
 //   --gateway <name|id>   KNX gateway config node, if the export has several
 //   --setpoint-ga <ga>    group address of the wallbox current setpoint (DPT 14.019)
 //   --group <name|id>     dashboard group for the controls
@@ -15,9 +15,10 @@
 //   --dry-run             print the detection result, write nothing
 //
 // The export is read-only input. The output contains your installation's addresses and
-// node IDs — keep it out of version control (the default name matches *.local.*).
+// node IDs — keep it out of version control (.local/ is gitignored).
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -27,7 +28,7 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const { values: opt, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-        out: { type: "string", default: here("./flow.local.json") },
+        out: { type: "string", default: here("../.local/flow.local.json") },
         gateway: { type: "string" },
         "setpoint-ga": { type: "string" },
         group: { type: "string" },
@@ -104,7 +105,9 @@ for (const [key, n] of Object.entries(detected)) {
 }
 
 // --- detect: setpoint target and gateway --------------------------------------
-const writes = knx.filter((n) => n.outputtype === "write" && dptIs(n, "14.019"));
+// Prefer write nodes on the tab that holds the wallbox feedback (the same GA may be written from several tabs)
+const writes = knx.filter((n) => n.outputtype === "write" && dptIs(n, "14.019"))
+    .sort((a, b) => (a.z === detected.status.z ? 0 : 1) - (b.z === detected.status.z ? 0 : 1));
 const setpoint = opt["setpoint-ga"]
     ? (writes.find((n) => n.topic === opt["setpoint-ga"]) ?? { topic: opt["setpoint-ga"], server: null })
     : pickOne("current setpoint write node (DPT 14.019)", writes, { required: true });
@@ -122,7 +125,7 @@ if (opt.gateway) {
 }
 
 // --- detect: flow tab and dashboard group -------------------------------------
-const tab = (setpoint.z && setpoint) || detected.status;
+const tab = detected.status.z ? detected.status : setpoint;
 const groups = exportNodes.filter((n) => n.type === "ui_group");
 let group = null;
 if (opt.group) {
@@ -167,12 +170,54 @@ function applyCfg(func, entries) {
     return func.slice(0, start) + block + func.slice(end);
 }
 
+// --- adopt a previous install ----------------------------------------------------
+// Node-RED gives imported nodes new IDs. Map every template node to the node that plays
+// the same role in an existing install, so a deploy replaces it instead of duplicating it.
+function roleMap(nodes) {
+    const ids = new Map(nodes.map((n) => [n.id, n]));
+    const fn = nodes.find((n) => n.type === "function" && n.name === "Departure charging");
+    if (!fn) return new Map();
+    const roles = new Map([["function", fn]]);
+    const target = (n, i = 0) => ids.get((n?.wires?.[i] || [])[0]);
+    const feeders = nodes.filter((n) => (n.wires || []).flat().includes(fn.id));
+    for (const n of feeders) {
+        if (n.type === "inject" && n.topic === "tick") roles.set("tick", n);
+        else if (n.topic === "smart_charging" || n.type === "ui_switch") roles.set("switch", n);
+        else if (n.topic === "departure" || ["ui_text_input", "ui_template"].includes(n.type)) roles.set("departure", n);
+    }
+    for (const [role, initRole] of [["departure", "init-departure"], ["switch", "init-switch"]]) {
+        const w = roles.get(role);
+        const init = w && nodes.find((n) => n.type === "inject" && (n.wires || []).flat().includes(w.id));
+        if (init) roles.set(initRole, init);
+    }
+    if (target(fn, 0)?.type === "delay") {
+        roles.set("delay", target(fn, 0));
+        if (target(target(fn, 0))?.type === "knxUltimate") roles.set("knx", target(target(fn, 0)));
+    }
+    if (target(fn, 1)?.type === "ui_text") roles.set("status", target(fn, 1));
+    return roles;
+}
+
+const templateRoles = roleMap(template);
+const existingRoles = roleMap(exportNodes);
+const adopt = new Map(); // template id -> existing node
+for (const [role, n] of templateRoles) {
+    const old = existingRoles.get(role);
+    if (old) adopt.set(n.id, old);
+}
+if (adopt.size) notes.push(`existing install found: ${adopt.size} nodes are replaced in place (same IDs and positions)`);
+const newId = (id) => adopt.get(id)?.id ?? id;
+
 // --- build output -------------------------------------------------------------
 const out = [];
 for (const n of template) {
     if ((n.type === "ui_group" || n.type === "ui_tab") && group) continue;
     const node = structuredClone(n);
-    if (!["ui_group", "ui_tab"].includes(node.type) && tab?.z) node.z = tab.z;
+    const old = adopt.get(n.id);
+    node.id = newId(n.id);
+    if (node.wires) node.wires = node.wires.map((ws) => ws.map(newId));
+    if (old) { node.x = old.x; node.y = old.y; node.z = old.z; }
+    if (!["ui_group", "ui_tab"].includes(node.type) && tab?.z && !old) node.z = tab.z;
     if (node.group && group) node.group = group.id;
     if (node.type === "function" && node.name === "Departure charging") {
         node.func = applyCfg(node.func, cfg);
@@ -202,5 +247,6 @@ for (const n of notes) console.log(`note: ${n}`);
 for (const w of warnings) console.log(`warning: ${w}`);
 
 if (opt["dry-run"]) process.exit(0);
+mkdirSync(dirname(opt.out), { recursive: true });
 writeFileSync(opt.out, JSON.stringify(out, null, 2) + "\n");
 console.log(`\nWrote ${out.length} nodes to ${opt.out} — import via Node-RED Menu → Import.`);

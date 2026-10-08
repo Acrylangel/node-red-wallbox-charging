@@ -21,7 +21,9 @@ integration that accepts a current setpoint in amps works.
 | `departure-charging/departure-charging.js` | Function node code — source of truth |
 | `departure-charging/flow.json` | Importable flow: function, 60 s tick, dashboard controls, rate limit, KNX write node |
 | `departure-charging/configure.mjs` | Builds a parametrised flow from an export of your existing flow |
-| `departure-charging/build-flow.mjs` | Embeds the `.js` into `flow.json` |
+| `departure-charging/deploy.mjs` | Pulls the running flows and deploys the generated flow via the Node-RED Admin API |
+| `departure-charging/dashboard/departure-input.html` | Departure time row (ui_template) and the status icon colours |
+| `departure-charging/build-flow.mjs` | Embeds the `.js` and the template into `flow.json` |
 | `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
 | `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
 
@@ -66,24 +68,33 @@ Messages into the function node:
 ## Outputs
 
 1. `msg.payload` = charge current in A, only when it changes → rate limit → wallbox setpoint
-2. `msg.payload` = one-line status for the dashboard, `msg.detail` = full calculation
-   (SoC estimate, energy needed, hours left, planned start, measured current)
+2. `msg.payload` = short status with a Font Awesome icon for a `ui_text` row (layout
+   `row-spread`), e.g. `7 A · full 06:15`, `Start 23:19`, `94 % at 07:00`, `Full`;
+   `msg.text` = the same without icon; `msg.detail` = full calculation
+3. `msg.payload` = departure in effect (`HH:MM`) → the departure row, so it always shows
+   what the function plans with
 
 ## Setup
 
-### Option A — generate from your existing flow (recommended)
+### Option A — generate from your existing flow and deploy (recommended)
 
 If your flow already receives the wallbox and car values via `knx-ultimate`, let
-`configure.mjs` derive the wiring from it:
+`configure.mjs` derive the wiring from it and `deploy.mjs` install it:
 
-1. Node-RED → Menu → Export → select the tab with your wallbox nodes → **JSON** → download
-2. Run:
+```bash
+node departure-charging/deploy.mjs login --url http://<node-red-host>:1880   # once; stores a token, not the password
+node departure-charging/deploy.mjs pull                                      # running flows → .local/export.local.json
+node departure-charging/configure.mjs .local/export.local.json --set CAPACITY_KWH=77
+node departure-charging/deploy.mjs deploy --dry-run                          # check, then without --dry-run
+```
 
-   ```bash
-   node departure-charging/configure.mjs ~/Downloads/flows.json --set CAPACITY_KWH=77
-   ```
+`deploy` backs up the complete flows to `.local/backups/` first and deploys only changed
+nodes. `deploy.mjs restore .local/backups/<file>.json` puts the backup back. If a previous
+install exists, `configure.mjs` reuses its node IDs and positions, so a redeploy replaces it
+instead of adding a second copy.
 
-3. Import the generated `departure-charging/flow.local.json` (Menu → Import) and deploy.
+Without Admin API access: export the tab as JSON in the editor (Menu → Export), run
+`configure.mjs` on that file and import `.local/flow.local.json` via Menu → Import.
 
 The script detects:
 
@@ -103,8 +114,8 @@ Anything ambiguous stops with an error naming the candidates — resolve it with
 `--set KEY=VALUE` (e.g. `--set CURRENT_SCALE=1 --set TZ=Europe/Vienna`).
 `--dry-run` prints the detection without writing.
 
-The output contains your group addresses and node IDs; its default name
-(`flow.local.json`) is gitignored.
+Everything installation-specific (exports, generated flows, backups) is written to `.local/`,
+which is gitignored.
 
 ### Option B — manual
 
@@ -133,5 +144,5 @@ node departure-charging/build-flow.mjs      # after editing departure-charging.j
   `ALLOW_PAUSE: false` — it will then charge at 6 A and finish early.
 - The car may stop on its own at its internal charge limit; the function then keeps
   6 A on the setpoint, which is harmless.
-- Departure time and switch state live in memory; after a restart the inject nodes
-  restore the defaults (07:00, on).
+- Departure time and switch state live in the function's memory context; after a
+  Node-RED restart they fall back to `DEFAULT_DEPARTURE` and on.

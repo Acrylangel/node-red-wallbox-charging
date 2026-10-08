@@ -16,6 +16,10 @@ flows_cred.json
 .config.*.json
 context/
 
+# Installation-specific data, notes for Claude sessions (exports, generated flows, backups)
+.local/
+CLAUDE.local.md
+
 # Local overrides
 *.local.*
 .env

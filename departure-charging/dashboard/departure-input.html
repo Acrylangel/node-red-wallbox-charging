@@ -1,0 +1,81 @@
+<!-- Departure time row for node-red-dashboard (ui_template, size auto / 6x1).
+     Also defines the icon colours used by the "Charge plan" text row.
+     Looks like the dashboard's label/value rows; tapping the time opens the native picker.
+     Sends msg.topic "departure", msg.payload "HH:MM". Shows the value it receives on its
+     input (same message, or ms since midnight) unless the field has focus — wire function
+     output 3 here. -->
+<div class="dc-departure">
+    <label class="dc-departure__label" for="dc-departure-{{$id}}">Departure</label>
+    <input class="dc-departure__time" id="dc-departure-{{$id}}" type="time" step="60" required
+           ng-model="departure" ng-change="changed()" ng-model-options="{ debounce: 800, timeSecondsFormat: '', timeStripZeroSeconds: true }">
+</div>
+
+<script>
+(function (scope) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const toDate = (v) => {
+        let h;
+        let m;
+        if (typeof v === "number") {
+            h = Math.floor(v / 3600000) % 24;
+            m = Math.floor(v / 60000) % 60;
+        } else {
+            const r = String(v).match(/^(\d{1,2}):(\d{2})/);
+            if (!r) return null;
+            h = +r[1];
+            m = +r[2];
+        }
+        return new Date(1970, 0, 1, h, m);
+    };
+    scope.$watch("msg", function (msg) {
+        if (!msg || msg.topic !== "departure") return;
+        // Do not overwrite the field while it is being edited
+        const input = document.getElementById("dc-departure-" + scope.$id);
+        if (input && document.activeElement === input) return;
+        const d = toDate(msg.payload);
+        if (d) scope.departure = d;
+    });
+    scope.changed = function () {
+        const d = scope.departure;
+        if (!(d instanceof Date) || isNaN(d)) return;
+        scope.send({ topic: "departure", payload: pad(d.getHours()) + ":" + pad(d.getMinutes()) });
+    };
+})(scope);
+</script>
+
+<style>
+    /* ui_template cards have 3px 6px padding; text rows have 0 12px and 48px height */
+    .dc-departure {
+        height: 42px;
+        padding: 0 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 16px;
+        color: var(--nr-dashboard-widgetTextColor, inherit);
+    }
+    .dc-departure__label { white-space: nowrap; }
+    .dc-departure__time {
+        font: inherit;
+        font-weight: 700;
+        color: inherit;
+        background: transparent;
+        border: 0;
+        border-bottom: 1px dashed currentColor;
+        padding: 2px 0;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color-scheme: dark;
+        cursor: pointer;
+    }
+    /* Icon colours for the "Charge plan" row (function output 2) */
+    .dc-state-ok { color: #3acb4a; }
+    .dc-state-wait { color: #f0b43c; }
+    .dc-state-bad { color: #ff4d4d; }
+    .dc-state-off { color: #a8a8a8; }
+    .dc-departure__time:focus-visible {
+        outline: 2px solid var(--nr-dashboard-groupTextColor, currentColor);
+        outline-offset: 2px;
+    }
+</style>
