@@ -20,8 +20,10 @@ integration that accepts a current setpoint in amps works.
 |---|---|
 | `departure-charging/departure-charging.js` | Function node code — source of truth |
 | `departure-charging/flow.json` | Importable flow: function, 60 s tick, dashboard controls, rate limit, KNX write node |
+| `departure-charging/configure.mjs` | Builds a parametrised flow from an export of your existing flow |
 | `departure-charging/build-flow.mjs` | Embeds the `.js` into `flow.json` |
 | `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
+| `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
 
 ## How it works
 
@@ -69,21 +71,59 @@ Messages into the function node:
 
 ## Setup
 
+### Option A — generate from your existing flow (recommended)
+
+If your flow already receives the wallbox and car values via `knx-ultimate`, let
+`configure.mjs` derive the wiring from it:
+
+1. Node-RED → Menu → Export → select the tab with your wallbox nodes → **JSON** → download
+2. Run:
+
+   ```bash
+   node departure-charging/configure.mjs ~/Downloads/flows.json --set CAPACITY_KWH=77
+   ```
+
+3. Import the generated `departure-charging/flow.local.json` (Menu → Import) and deploy.
+
+The script detects:
+
+| What | How |
+|---|---|
+| Wallbox status | `knx-ultimate` feedback node with DPT 4.x |
+| Car SoC | feedback node with DPT 5.001 whose name/topic mentions SoC |
+| Target SoC (optional) | feedback node with DPT 5.001 whose name/topic mentions target |
+| Measured current (optional) | feedback node with DPT 14.019, not a "max" value |
+| Setpoint | `knx-ultimate` write node with DPT 14.019 → its group address and gateway |
+| Flow tab, dashboard group | tab of the setpoint node; a `ui_group` named like wallbox/charging |
+
+The global-context keys are taken from each node's output topic (`msg.topic`). It warns
+when a detected node is not wired to a function that stores `msg.topic` in global context.
+Anything ambiguous stops with an error naming the candidates — resolve it with
+`--setpoint-ga`, `--gateway` or `--group`. Any other `CFG` value can be set with
+`--set KEY=VALUE` (e.g. `--set CURRENT_SCALE=1 --set TZ=Europe/Vienna`).
+`--dry-run` prints the detection without writing.
+
+The output contains your group addresses and node IDs; its default name
+(`flow.local.json`) is gitignored.
+
+### Option B — manual
+
 1. Node-RED → Menu → Import → `departure-charging/flow.json`
-2. Open the node **Charge current setpoint**: select your KNX gateway and enter the
-   group address of the wallbox current setpoint (DPT 14.019, amps)
+2. Open the node **Charge current setpoint (set gateway + GA)**: select your KNX gateway and
+   enter the group address of the wallbox current setpoint (DPT 14.019, amps)
 3. Adjust `CFG` at the top of the function — at least `KEYS`, `CAPACITY_KWH`,
    `CURRENT_SCALE` and `TZ`
 4. Deploy. The dashboard tab "Wallbox" shows departure time, the on/off switch and the
    current charge plan
 
 Requires `node-red-dashboard` (1.x) for the dashboard nodes and
-`node-red-contrib-knx-ultimate` for the write node.
+`node-red-contrib-knx-ultimate` for the write node. The scripts need Node.js 18+.
 
 ## Development
 
 ```bash
 node departure-charging/test/simulate.mjs   # simulate charging nights
+node --test departure-charging/test/        # configure.mjs tests
 node departure-charging/build-flow.mjs      # after editing departure-charging.js
 ```
 

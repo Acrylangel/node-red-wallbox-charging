@@ -1,0 +1,289 @@
+[
+ {
+  "id": "4b107d6f1e687cc0",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/3",
+  "outputtopic": "wallbox.is_allowed",
+  "dpt": "1.002",
+  "name": "Wallbox enabled",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9ddb4ed29b937815"
+   ]
+  ]
+ },
+ {
+  "id": "6c633207249cc37f",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/4",
+  "outputtopic": "wallbox.is_available",
+  "dpt": "1.002",
+  "name": "Wallbox available",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9ddb4ed29b937815"
+   ]
+  ]
+ },
+ {
+  "id": "a7cdba7cf08130f2",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/5",
+  "outputtopic": "wallbox.current_power",
+  "dpt": "14.019",
+  "name": "Wallbox charge current",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "5a9b9826866c46f9",
+    "99416253b60fd1ae",
+    "9ddb4ed29b937815"
+   ]
+  ]
+ },
+ {
+  "id": "9aabe44fac5a7ae1",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/6",
+  "outputtopic": "wallbox.max_power",
+  "dpt": "14.019",
+  "name": "Wallbox max current",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9ddb4ed29b937815",
+    "80534afc68c1b5a2"
+   ]
+  ]
+ },
+ {
+  "id": "8ea6c84ad2c72fed",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/8",
+  "outputtopic": "wallbox.status",
+  "dpt": "4.001",
+  "name": "Wallbox status",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "5a9b9826866c46f9",
+    "6543a0b302666cce",
+    "9ddb4ed29b937815"
+   ]
+  ]
+ },
+ {
+  "id": "2d40b35321a0fea3",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/0",
+  "outputtopic": "",
+  "dpt": "1.001",
+  "name": "Enable wallbox",
+  "outputtype": "write",
+  "notifywrite": false,
+  "notifyresponse": false,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "4df8739c3f8c6c21",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/2",
+  "outputtopic": "",
+  "dpt": "14.019",
+  "name": "Set charge current",
+  "outputtype": "write",
+  "notifywrite": false,
+  "notifyresponse": false,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "d882a2e07f0ec494",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/10",
+  "outputtopic": "car.charging_state",
+  "dpt": "1.001",
+  "name": "Car charging",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9d7a21d324b654f7"
+   ]
+  ]
+ },
+ {
+  "id": "8b4e7329a2ac14ac",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/9",
+  "outputtopic": "car.soc",
+  "dpt": "5.001",
+  "name": "Car SoC",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9cc04213036877a3",
+    "9d7a21d324b654f7"
+   ]
+  ]
+ },
+ {
+  "id": "924647db3dfa768c",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/22",
+  "outputtopic": "car.current_charge",
+  "dpt": "9.024",
+  "name": "Car charging power",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "9d7a21d324b654f7"
+   ]
+  ]
+ },
+ {
+  "id": "5d66f8e1e5076de0",
+  "type": "knxUltimate",
+  "z": "7f407cea89018adb",
+  "server": "dd12345ed8079bbc",
+  "topic": "1/2/6",
+  "outputtopic": "wallbox.max_power",
+  "dpt": "14.019",
+  "name": "Wallbox max current",
+  "outputtype": "read",
+  "notifywrite": true,
+  "notifyresponse": true,
+  "wires": [
+   [
+    "e575121270640c52"
+   ]
+  ]
+ },
+ {
+  "id": "9ddb4ed29b937815",
+  "type": "function",
+  "z": "7f407cea89018adb",
+  "name": "Store in flow",
+  "func": "flow.set(msg.topic, msg.payload);\nglobal.set(msg.topic, msg.payload);\n\nreturn msg;",
+  "outputs": 1,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "9d7a21d324b654f7",
+  "type": "function",
+  "z": "7f407cea89018adb",
+  "name": "Store globally",
+  "func": "global.set(msg.topic,msg.payload);\nreturn msg;",
+  "outputs": 1,
+  "wires": [
+   [
+    "aad9b866a16886db"
+   ]
+  ]
+ },
+ {
+  "id": "99416253b60fd1ae",
+  "type": "function",
+  "z": "7f407cea89018adb",
+  "name": "Current to power",
+  "func": "msg.payload = 23 * 3 * load * mod;\nreturn msg;",
+  "outputs": 1,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "dd12345ed8079bbc",
+  "type": "knxUltimate-config",
+  "host": "192.0.2.10",
+  "port": "3671",
+  "name": "KNX gateway"
+ },
+ {
+  "id": "6a759ff0ec95537f",
+  "type": "ui_group",
+  "name": "Wallbox",
+  "tab": "afb50b912987390f",
+  "order": 1,
+  "disp": true,
+  "width": 6
+ },
+ {
+  "id": "cf35ed52ef83c976",
+  "type": "ui_group",
+  "name": "Car",
+  "tab": "afb50b912987390f",
+  "order": 2,
+  "disp": true,
+  "width": 6
+ },
+ {
+  "id": "afb50b912987390f",
+  "type": "ui_tab",
+  "name": "Home",
+  "icon": "fa-charging-station",
+  "order": 8
+ },
+ {
+  "id": "89fb5172acd8e713",
+  "type": "ui_text",
+  "z": "7f407cea89018adb",
+  "group": "6a759ff0ec95537f",
+  "order": 3,
+  "label": "Status",
+  "wires": []
+ },
+ {
+  "id": "80534afc68c1b5a2",
+  "type": "ui_slider",
+  "z": "7f407cea89018adb",
+  "group": "6a759ff0ec95537f",
+  "order": 8,
+  "label": "Current (A)",
+  "wires": [
+   []
+  ]
+ }
+]
