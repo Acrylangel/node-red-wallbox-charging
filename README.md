@@ -115,7 +115,7 @@ Anything ambiguous stops with an error naming the candidates — resolve it with
 `--dry-run` prints the detection without writing.
 
 Everything installation-specific (exports, generated flows, backups) is written to `.local/`,
-which is gitignored.
+which is gitignored — or to `NODE_RED_LOCAL_DIR` if set, e.g. a private project of your own.
 
 ### Option B — manual
 

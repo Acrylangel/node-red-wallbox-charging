@@ -7,7 +7,7 @@
 //   node departure-charging/configure.mjs <export.json> [options]
 //
 // Options:
-//   --out <file>          output file (default: .local/flow.local.json — gitignored)
+//   --out <file>          output file (default: $NODE_RED_LOCAL_DIR or .local/, flow.local.json)
 //   --gateway <name|id>   KNX gateway config node, if the export has several
 //   --setpoint-ga <ga>    group address of the wallbox current setpoint (DPT 14.019)
 //   --group <name|id>     dashboard group for the controls
@@ -28,7 +28,7 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const { values: opt, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-        out: { type: "string", default: here("../.local/flow.local.json") },
+        out: { type: "string", default: process.env.NODE_RED_LOCAL_DIR ? `${process.env.NODE_RED_LOCAL_DIR}/flow.local.json` : here("../.local/flow.local.json") },
         gateway: { type: "string" },
         "setpoint-ga": { type: "string" },
         group: { type: "string" },

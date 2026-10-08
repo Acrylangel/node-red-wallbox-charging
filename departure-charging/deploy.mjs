@@ -4,7 +4,7 @@
 //
 //   node departure-charging/deploy.mjs login   --url http://host:1880
 //   node departure-charging/deploy.mjs pull    [.local/export.local.json]
-//   node departure-charging/deploy.mjs deploy  [.local/flow.local.json] [--dry-run]
+//   node departure-charging/deploy.mjs deploy  [.local/flow.local.json] [--remove id,id] [--dry-run]
 //   node departure-charging/deploy.mjs restore <.local/backups/…>
 //
 // login    asks for the Node-RED admin user and password and stores only the access
@@ -12,10 +12,12 @@
 // pull     saves the running flows as an export for configure.mjs
 // deploy   backs up the complete current flows to .local/backups/, removes the nodes of a previous
 //          departure-charging deploy (same IDs), adds the new ones and deploys with
-//          "Node-RED-Deployment-Type: nodes", so only changed nodes restart
+//          "Node-RED-Deployment-Type: nodes", so only changed nodes restart;
+//          --remove deletes the listed node IDs (refused while other nodes still wire to them)
 // restore  deploys a backup unchanged
 //
 // The URL is remembered with the token; NODE_RED_URL / NODE_RED_TOKEN override both.
+// Data files go to NODE_RED_LOCAL_DIR (default: .local/ in this repo, gitignored).
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -25,6 +27,8 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+const LOCAL_DIR = process.env.NODE_RED_LOCAL_DIR || here("../.local");
+const local = (p) => join(LOCAL_DIR, p);
 const CONFIG_DIR = join(homedir(), ".config", "node-red-wallbox");
 const DEFAULT_CONFIG = join(CONFIG_DIR, "default.json");
 
@@ -32,6 +36,7 @@ const { values: opt, positionals } = parseArgs({
     allowPositionals: true,
     options: {
         url: { type: "string" },
+        remove: { type: "string", default: "" },
         "dry-run": { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
     },
@@ -111,18 +116,21 @@ function save(cfg) {
 // --- deploy ------------------------------------------------------------------
 async function deploy() {
     const { url, token } = loadConfig();
-    const path = file || here("../.local/flow.local.json");
+    const path = file || local("flow.local.json");
     if (!existsSync(path)) fail(`${path} not found — run configure.mjs first`);
     const incoming = JSON.parse(readFileSync(path, "utf8"));
 
     const current = await api(url, token, "/flows");
-    mkdirSync(here("../.local/backups"), { recursive: true });
-    const backup = here(`../.local/backups/flows-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    mkdirSync(local("backups"), { recursive: true });
+    const backup = local(`backups/flows-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     writeFileSync(backup, JSON.stringify(current.flows, null, 2) + "\n");
 
     const incomingIds = new Set(incoming.map((n) => n.id));
-    const kept = current.flows.filter((n) => !incomingIds.has(n.id));
-    const replaced = current.flows.length - kept.length;
+    const removeIds = new Set(opt.remove.split(",").map((x) => x.trim()).filter(Boolean));
+    const unknown = [...removeIds].filter((id) => !current.flows.some((n) => n.id === id));
+    if (unknown.length) fail(`--remove: not in the running flows: ${unknown.join(", ")}`);
+    const kept = current.flows.filter((n) => !incomingIds.has(n.id) && !removeIds.has(n.id));
+    const replaced = current.flows.filter((n) => incomingIds.has(n.id)).length;
     const existing = new Set(kept.map((n) => n.id));
 
     // Every reference must resolve: gateway, dashboard group, flow tab, wires
@@ -135,11 +143,18 @@ async function deploy() {
             if (!existing.has(w) && !incomingIds.has(w)) missing.push(`${n.name || n.type} wire → ${w}`);
         }
     }
+    for (const n of kept) {
+        for (const w of (n.wires || []).flat()) {
+            if (removeIds.has(w)) missing.push(`${n.name || n.type} [${n.id}] still wires to removed ${w}`);
+        }
+        if (n.type.startsWith("subflow:") && removeIds.has(n.type.slice(8))) missing.push(`instance ${n.id} of removed subflow ${n.type.slice(8)}`);
+        if (removeIds.has(n.z)) missing.push(`${n.name || n.type} [${n.id}] lives in removed ${n.z}`);
+    }
     if (missing.length) fail(`references not found in the running flows:\n  ${missing.join("\n  ")}`);
 
     console.log(`Node-RED:   ${url} (rev ${current.rev})`);
     console.log(`Backup:     ${backup}`);
-    console.log(`Nodes:      ${incoming.length} to deploy, ${replaced} from a previous deploy replaced, ${kept.length} untouched`);
+    console.log(`Nodes:      ${incoming.length} to deploy (${replaced} replace existing), ${removeIds.size} removed, ${kept.length} untouched`);
     if (opt["dry-run"]) { console.log("Dry run — nothing deployed."); return; }
 
     const result = await api(url, token, "/flows", {
@@ -153,8 +168,8 @@ async function deploy() {
 
 async function pull() {
     const { url, token } = loadConfig();
-    const path = file || here("../.local/export.local.json");
-    mkdirSync(here("../.local"), { recursive: true });
+    const path = file || local("export.local.json");
+    mkdirSync(LOCAL_DIR, { recursive: true });
     const current = await api(url, token, "/flows");
     writeFileSync(path, JSON.stringify(current.flows, null, 2) + "\n");
     console.log(`Saved ${current.flows.length} nodes (rev ${current.rev}) to ${path}`);
