@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Node-RED runtime data — never commit a live userDir (contains credentials)
+.node-red/
+flows_cred.json
+*_cred.json
+.config.*.json
+context/
+
+# Local overrides
+*.local.*
+.env
+.env.*
