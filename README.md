@@ -1,4 +1,9 @@
-# Wallbox departure charging for Node-RED
+# 🚗⚡ Wallbox departure charging for Node-RED
+
+[![Node-RED](https://img.shields.io/badge/Node--RED-flow-8F0000?logo=nodered&logoColor=white)](https://nodered.org)
+[![node-red-dashboard](https://img.shields.io/badge/node--red--dashboard-1.x-8F0000)](https://flows.nodered.org/node/node-red-dashboard)
+[![KNX](https://img.shields.io/badge/KNX-knx--ultimate-2E7D32)](https://flows.nodered.org/node/node-red-contrib-knx-ultimate)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 
 **Your car is full when you leave, not hours earlier.**
 
@@ -7,7 +12,7 @@ then works out how much energy is missing and charges just fast enough to be don
 before you leave. No app, no cloud: it runs locally in your Node-RED and controls your
 wallbox directly.
 
-## What it does
+## 🔌 What it does
 
 A wallbox normally charges at full power the moment the car is plugged in. The car is full
 a few hours later and then sits at 100 % all night. This flow spreads the charge over the
@@ -23,34 +28,34 @@ time you actually have:
 *Simulated with an 86 kWh battery and departure 07:00. It aims to finish 45 min before
 departure as a reserve and rounds the current up, so it is usually done a bit earlier.*
 
-## Benefits
+## ✨ Benefits
 
-- **Gentler on the battery:** the car does not sit at 100 % for hours, and it charges at a
+- 🔋 **Gentler on the battery:** the car does not sit at 100 % for hours, and it charges at a
   low current instead of the maximum.
-- **Safe fallbacks:** the plan is recalculated every minute. If time gets short, the car draws
+- 🛟 **Safe fallbacks:** the plan is recalculated every minute. If time gets short, the car draws
   less than planned or the SoC is unknown, it charges at full power — never slower than needed.
-- **Warm battery in the morning:** charging ends just before you leave. In winter the battery
+- 🌡️ **Warm battery in the morning:** charging ends just before you leave. In winter the battery
   is still warm from charging, which helps range and efficiency on the first kilometres.
-- **Less load on the house connection:** a few amps through the night instead of 11 kW at
+- 🏠 **Less load on the house connection:** a few amps through the night instead of 11 kW at
   peak time, together with the stove, heat pump and everything else.
-- **Vacation-aware (optional):** the car is charged in time for an early start to a trip, the
+- 🏝️ **Vacation-aware (optional):** the car is charged in time for an early start to a trip, the
   automation pauses while you are away and resumes an hour before you are back.
-- **Easy to use:** one time field and one switch on the Node-RED dashboard. Switch it off and
+- 👆 **Easy to use:** one time field and one switch on the Node-RED dashboard. Switch it off and
   the wallbox is yours again for manual control.
 
-## On the dashboard
+## 📱 On the dashboard
 
 Three rows in your existing wallbox group:
 
 | Row | Shows | Example |
 |---|---|---|
-| **Departure** | the time you leave; tap to change | `07:00` |
-| **Smart charging** | on/off switch; off = manual control as before | on |
-| **Charge plan** | what happens next | `Start 21:01` · `7 A · full 06:15` · `Full` · `Unplugged` · `Away until 28.07.` |
+| 🕖 **Departure** | the time you leave; tap to change | `07:00` |
+| 🔀 **Smart charging** | on/off switch; off = manual control as before | on |
+| 📋 **Charge plan** | what happens next | `Start 21:01` · `7 A · full 06:15` · `Full` · `Unplugged` · `Away until 28.07.` |
 
 If the car cannot make it in time, the charge plan says so in red, e.g. `94 % at 07:00`.
 
-## What you need
+## 🧰 What you need
 
 - Node-RED with [`node-red-dashboard`](https://flows.nodered.org/node/node-red-dashboard) 1.x
 - A wallbox whose charge current can be set in amps — written for a KNX wallbox via
@@ -59,7 +64,7 @@ If the car cannot make it in time, the charge plan says so in red, e.g. `94 % at
 - The car's state of charge (SoC) in Node-RED, e.g. from a car integration or bridge
 - Wallbox status (plugged in / charging) and, ideally, the measured charge current
 
-Ready to install? Jump to [Setup](#setup). Everything below is the technical reference.
+👉 Ready to install? Jump to [Setup](#setup). Everything below is the technical reference.
 
 ---
 
