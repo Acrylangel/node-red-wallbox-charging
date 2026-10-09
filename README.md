@@ -1,34 +1,67 @@
-# node-red-wallbox-charging
+# Wallbox departure charging for Node-RED
 
-Departure-time charging for Node-RED: modulates the wallbox charge current so the car
-reaches its target state of charge (SoC) exactly when you leave — instead of charging
-at full power the moment it is plugged in.
+**Your car is full when you leave, not hours earlier.**
 
-- 0 A (pause) or 6–16 A, 3-phase — the IEC 61851 range a car accepts
-- Starts as late as possible when even the minimum current would finish early
-- Falls back to full power when time is short or data is missing
-- Departure time set from the Node-RED dashboard, interpreted in a fixed time zone
-  (works when Node-RED runs in UTC, e.g. in Docker)
-- Optional away period (e.g. from a vacation mode): charges for the start of the trip,
-  pauses the automation while you are away and resumes before you return
+Plug the car in when you get home and set the time you leave in the morning. Node-RED
+then works out how much energy is missing and charges just fast enough to be done shortly
+before you leave. No app, no cloud: it runs locally in your Node-RED and controls your
+wallbox directly.
 
-Written for a KNX wallbox driven via [`node-red-contrib-knx-ultimate`](https://flows.nodered.org/node/node-red-contrib-knx-ultimate),
-but the function itself only reads global context and emits a number, so any wallbox
-integration that accepts a current setpoint in amps works.
+## What it does
 
-## Contents
+A wallbox normally charges at full power the moment the car is plugged in. The car is full
+a few hours later and then sits at 100 % all night. This flow spreads the charge over the
+time you actually have:
 
-| File | Purpose |
-|---|---|
-| `departure-charging/departure-charging.js` | Function node code — source of truth |
-| `departure-charging/flow.json` | Importable flow: function, 60 s tick, dashboard controls, rate limit, KNX write node |
-| `departure-charging/configure.mjs` | Builds a parametrised flow from an export of your existing flow |
-| `departure-charging/deploy.mjs` | Pulls the running flows and deploys the generated flow via the Node-RED Admin API |
-| `departure-charging/dashboard/departure-input.html` | Departure time row (ui_template) and the status icon colours |
-| `departure-charging/build-flow.mjs` | Embeds the `.js` and the template into `flow.json` |
-| `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
-| `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
-| `departure-charging/test/away.test.mjs` | Tests for the away period |
+| | Usual wallbox | With departure charging |
+|---|---|---|
+| 18:00 plugged in at 60 % | starts at 16 A (11 kW) | waits — `Start 21:01` |
+| 21:01 | full since 21:28 | starts at 7 A (5 kW), later 6 A |
+| 05:45 | has been at 100 % for over 8 h | full |
+| 07:00 departure | battery full for 9.5 h, cooled down | battery full for 75 min, still warm |
+
+*Simulated with an 86 kWh battery and departure 07:00. It aims to finish 45 min before
+departure as a reserve and rounds the current up, so it is usually done a bit earlier.*
+
+## Benefits
+
+- **Gentler on the battery:** the car does not sit at 100 % for hours, and it charges at a
+  low current instead of the maximum.
+- **Safe fallbacks:** the plan is recalculated every minute. If time gets short, the car draws
+  less than planned or the SoC is unknown, it charges at full power — never slower than needed.
+- **Warm battery in the morning:** charging ends just before you leave. In winter the battery
+  is still warm from charging, which helps range and efficiency on the first kilometres.
+- **Less load on the house connection:** a few amps through the night instead of 11 kW at
+  peak time, together with the stove, heat pump and everything else.
+- **Vacation-aware (optional):** the car is charged in time for an early start to a trip, the
+  automation pauses while you are away and resumes an hour before you are back.
+- **Easy to use:** one time field and one switch on the Node-RED dashboard. Switch it off and
+  the wallbox is yours again for manual control.
+
+## On the dashboard
+
+Three rows in your existing wallbox group:
+
+| Row | Shows | Example |
+|---|---|---|
+| **Departure** | the time you leave; tap to change | `07:00` |
+| **Smart charging** | on/off switch; off = manual control as before | on |
+| **Charge plan** | what happens next | `Start 21:01` · `7 A · full 06:15` · `Full` · `Unplugged` · `Away until 28.07.` |
+
+If the car cannot make it in time, the charge plan says so in red, e.g. `94 % at 07:00`.
+
+## What you need
+
+- Node-RED with [`node-red-dashboard`](https://flows.nodered.org/node/node-red-dashboard) 1.x
+- A wallbox whose charge current can be set in amps — written for a KNX wallbox via
+  [`node-red-contrib-knx-ultimate`](https://flows.nodered.org/node/node-red-contrib-knx-ultimate),
+  but any integration that accepts a current setpoint works
+- The car's state of charge (SoC) in Node-RED, e.g. from a car integration or bridge
+- Wallbox status (plugged in / charging) and, ideally, the measured charge current
+
+Ready to install? Jump to [Setup](#setup). Everything below is the technical reference.
+
+---
 
 ## How it works
 
@@ -201,3 +234,17 @@ node departure-charging/build-flow.mjs      # after editing departure-charging.j
   6 A on the setpoint, which is harmless.
 - Departure time and switch state live in the function's memory context; after a
   Node-RED restart they fall back to `DEFAULT_DEPARTURE` and on.
+
+## Repository contents
+
+| File | Purpose |
+|---|---|
+| `departure-charging/departure-charging.js` | Function node code — source of truth |
+| `departure-charging/flow.json` | Importable flow: function, 60 s tick, dashboard controls, rate limit, KNX write node |
+| `departure-charging/configure.mjs` | Builds a parametrised flow from an export of your existing flow |
+| `departure-charging/deploy.mjs` | Pulls the running flows and deploys the generated flow via the Node-RED Admin API |
+| `departure-charging/dashboard/departure-input.html` | Departure time row (ui_template) and the status icon colours |
+| `departure-charging/build-flow.mjs` | Embeds the `.js` and the template into `flow.json` |
+| `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
+| `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
+| `departure-charging/test/away.test.mjs` | Tests for the away period |
