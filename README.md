@@ -9,6 +9,8 @@ at full power the moment it is plugged in.
 - Falls back to full power when time is short or data is missing
 - Departure time set from the Node-RED dashboard, interpreted in a fixed time zone
   (works when Node-RED runs in UTC, e.g. in Docker)
+- Optional away period (e.g. from a vacation mode): charges for the start of the trip,
+  pauses the automation while you are away and resumes before you return
 
 Written for a KNX wallbox driven via [`node-red-contrib-knx-ultimate`](https://flows.nodered.org/node/node-red-contrib-knx-ultimate),
 but the function itself only reads global context and emits a number, so any wallbox
@@ -26,6 +28,7 @@ integration that accepts a current setpoint in amps works.
 | `departure-charging/build-flow.mjs` | Embeds the `.js` and the template into `flow.json` |
 | `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
 | `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
+| `departure-charging/test/away.test.mjs` | Tests for the away period |
 
 ## How it works
 
@@ -44,6 +47,56 @@ updates the function estimates the SoC from the measured wallbox current, capped
 above the last reported value. Hysteresis keeps the setpoint from toggling between
 neighbouring amp values.
 
+### Away period (optional)
+
+For trips that start at an unusual time (e.g. a vacation leaving at 03:00) and for the time
+you are away, the function can follow an away period from global context. It is off by
+default; enable it by pointing `KEYS.away` at a global key holding
+
+```json
+{ "start": "2026-07-18T03:00", "end": "2026-07-28T15:00" }
+```
+
+— wall-clock times `YYYY-MM-DDTHH:mm` in `CFG.TZ`, typically written by a vacation-mode
+dashboard card. `{}`, a missing key, unparsable times or `end` ≤ `start` mean "no away
+period". With configure.mjs: `--set KEYS.away=vacation_settings`.
+
+**Example** — regular departure 06:30, away from Sat 03:00 to the following Tue 15:00:
+
+| When | What the function does |
+|---|---|
+| Fri until 06:30 | plans for the regular departure (Fri 06:30) as usual |
+| Fri after 06:30, car still plugged in | the usual grace period (`GRACE_MIN`, 120 min): full speed, still planning for 06:30 |
+| Fri, once unplugged (at the latest 08:30) | plans for Sat 03:00; the departure row shows `03:00` |
+| Sat 03:00 until Tue 14:00 | behaves as if smart charging were off: sends nothing; status row `Away until DD.MM.` |
+| from Tue 14:00 (`AWAY_RESUME_MIN` = 60 before `end`) | regular departure again (Wed 06:30); the departure row shows `06:30` |
+
+Details:
+
+- **Which departure is replaced:** the start of the away period replaces the regular
+  departure only if it comes before the next regular departure. A start several days ahead
+  has no effect until the evening before. A start later on the same day (e.g. 10:00 after a
+  regular 06:30) takes over right after the regular departure.
+- **The departure row** shows the away start only while it is in effect. The stored regular
+  departure is not changed. If you edit the field in that time, you set a new regular
+  departure; the earlier of the two is used.
+- **During the away period** the function writes no setpoint at all — like the
+  `smart_charging` switch set to off, but without touching the switch. The last setpoint stays
+  on the wallbox, so the car keeps charging until you unplug it, even shortly after `start`.
+  Switching the wallbox off is left to your flow: send 0 A (or disable the wallbox) when the
+  status turns `A` (unplugged). If the car stays at home and plugged in, it keeps the last
+  setpoint. Normally that is the hold current after a full charge.
+- **Afterwards** the regular schedule applies: if the car is plugged in, it is charged for
+  the next regular departure. The state of the `smart_charging` switch is respected
+  throughout, so manual control stays manual.
+- Shorter than `AWAY_RESUME_MIN`: no pause, only the earlier departure.
+
+| CFG | Default | Meaning |
+|---|---|---|
+| `KEYS.away` | `null` | global key of the away period; `null` = feature off |
+| `AWAY_RESUME_MIN` | `60` | automation resumes this many minutes before `end` |
+| `GRACE_MIN` | `120` | still plugged in after a departure: full speed this long before planning for the next one |
+
 ## Inputs
 
 Read from **global context** — your existing flow stores the values there
@@ -56,6 +109,7 @@ The keys are configurable in `CFG.KEYS`:
 | `car.target_soc` | target SoC in % (optional, defaults to 100) |
 | `wallbox.status` | IEC 61851 state `A`–`F` (DPT 4.001) |
 | `wallbox.current_power` | measured charge current per phase; set `CURRENT_SCALE` to its unit (0.1 for 0.1 A) |
+| – (`KEYS.away`, off by default) | away period `{ start, end }`, see [Away period](#away-period-optional) (optional) |
 
 Messages into the function node:
 
@@ -69,10 +123,11 @@ Messages into the function node:
 
 1. `msg.payload` = charge current in A, only when it changes → rate limit → wallbox setpoint
 2. `msg.payload` = short status with a Font Awesome icon for a `ui_text` row (layout
-   `row-spread`), e.g. `7 A · full 06:15`, `Start 23:19`, `94 % at 07:00`, `Full`;
+   `row-spread`), e.g. `7 A · full 06:15`, `Start 23:19`, `94 % at 07:00`, `Full`,
+   `Away until 28.07.`;
    `msg.text` = the same without icon; `msg.detail` = full calculation
 3. `msg.payload` = departure in effect (`HH:MM`) → the departure row, so it always shows
-   what the function plans with
+   what the function plans with (the away start while that one applies)
 
 ## Setup
 
@@ -134,7 +189,7 @@ Requires `node-red-dashboard` (1.x) for the dashboard nodes and
 
 ```bash
 node departure-charging/test/simulate.mjs   # simulate charging nights
-node --test departure-charging/test/        # configure.mjs tests
+node --test departure-charging/test/        # configure.mjs and away period tests
 node departure-charging/build-flow.mjs      # after editing departure-charging.js
 ```
 

@@ -5,6 +5,8 @@
 // Reads from global context (keys configurable in CFG.KEYS):
 //   car.soc                SoC % (whole percent is fine)
 //   car.target_soc         target SoC % (optional, default 100)
+//   away period            { start, end } as wall time "YYYY-MM-DDTHH:mm" in CFG.TZ (optional,
+//                          e.g. vacation settings; {} = none) — see "Away period" below
 //   wallbox.status         IEC 61851 state A–F
 //   wallbox.current_power  measured charge current per phase (unit: CURRENT_SCALE)
 //
@@ -19,6 +21,13 @@
 //           msg.text = the same without icon, msg.detail = full calculation
 // Output 3: msg.topic "departure", msg.payload "HH:MM" = the departure in effect, sent on every
 //           run so the dashboard input shows it (also after a restart of either node)
+//
+// Away period (CFG.KEYS.away): once the last regular departure before the start has passed
+// (and the car was unplugged or GRACE_MIN is over), the car is charged for the start of the
+// period instead; the dashboard input shows that time meanwhile. From the start until
+// AWAY_RESUME_MIN before its end the function stays silent like with smart charging off, so
+// the setpoint is kept until the car is unplugged (switching the wallbox off on unplug is
+// left to the flow); then the regular schedule resumes.
 // ============================================================================
 
 const CFG = {
@@ -27,6 +36,7 @@ const CFG = {
         target_soc: "car.target_soc",    // optional
         current: "wallbox.current_power", // measured current per phase
         wallbox_status: "wallbox.status",
+        away: null,                      // optional, e.g. "vacation_settings"
     },
     TZ: "Europe/Berlin",       // Node-RED in Docker often runs in UTC — departure is always local time
     CAPACITY_KWH: 86,          // net battery capacity (e.g. VW ID.7 Pro: 77, Pro S / GTX: 86)
@@ -46,6 +56,7 @@ const CFG = {
     CURRENT_SCALE: 0.1,        // factor to amps for the measured current (0.1 = value in 0.1 A, 1 = value in A)
     SOC_EST_MAX_AHEAD: 2,      // the estimate may run at most this many % ahead of the last reported SoC
     SOC_WAIT_MIN: 10,          // after plug-in: hold at 0 A this long for a first SoC, then fall back to full speed
+    AWAY_RESUME_MIN: 60,       // away period: smart charging resumes this long before its end
 };
 
 const PLUGGED = ["B", "C", "D"];
@@ -60,6 +71,7 @@ const LOOK = {
     late: "fa fa-exclamation-triangle dc-state-bad",
     manual: "fa fa-hand fa-hand-paper-o dc-state-off",
     unplugged: "fa fa-plug dc-state-off",
+    away: "fa fa-suitcase dc-state-off",
 };
 
 // --- time zone helpers ------------------------------------------------------
@@ -81,6 +93,11 @@ function wallToTs(y, mo, d, h, mi) {
     return guess - tzOffsetMs(guess - tzOffsetMs(guess));
 }
 const hhmm = (ts) => new Date(ts).toLocaleTimeString("de-DE", { timeZone: CFG.TZ, hour: "2-digit", minute: "2-digit" });
+const ddmm = (ts) => new Date(ts).toLocaleDateString("de-DE", { timeZone: CFG.TZ, day: "2-digit", month: "2-digit" });
+function parseWallTime(v) {
+    const m = typeof v === "string" && v.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    return m ? wallToTs(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) : null;
+}
 
 // ---------------------------------------------------------------------------
 const s = context.get("s") || {
@@ -120,9 +137,14 @@ function parseDeparture(v) {
 function nextDepartureTs() {
     const d = s.departure || parseDeparture(CFG.DEFAULT_DEPARTURE);
     const p = wallParts(now);
-    let ts = wallToTs(p.year, p.month - 1, p.day, d.h, d.m);
-    if (ts <= now - CFG.GRACE_MIN * 60000) ts = wallToTs(p.year, p.month - 1, p.day + 1, d.h, d.m);
-    return ts;
+    const today = wallToTs(p.year, p.month - 1, p.day, d.h, d.m);
+    const tomorrow = wallToTs(p.year, p.month - 1, p.day + 1, d.h, d.m);
+    const inGrace = today <= now && today > now - CFG.GRACE_MIN * 60000;
+    // An away period that starts before the next regular departure replaces it — after the
+    // grace period of a departure that has just passed, or once the car is unplugged
+    if (away && away.start > now && away.start <= (today > now ? today : tomorrow)
+        && !(inGrace && PLUGGED.includes(s.wallbox))) return away.start;
+    return inGrace || today > now ? today : tomorrow;
 }
 
 const ampsToKw = (a) => a * CFG.PHASES * CFG.VOLTAGE / 1000;
@@ -161,6 +183,15 @@ if (st !== s.wallbox) {
     s.wallbox = st;
 }
 
+// Away period: { start, end } in wall time; invalid or empty = none
+const awayG = CFG.KEYS.away ? g(CFG.KEYS.away) : null;
+const awayStart = awayG ? parseWallTime(awayG.start) : null;
+const awayEnd = awayG ? parseWallTime(awayG.end) : null;
+const away = awayStart !== null && awayEnd !== null && awayEnd > awayStart
+    ? { start: awayStart, resume: Math.max(awayStart, awayEnd - CFG.AWAY_RESUME_MIN * 60000) }
+    : null;
+const isAway = away !== null && now >= away.start && now < away.resume;
+
 const p = msg.payload;
 if (msg.topic === "departure") {
     const d = parseDeparture(p);
@@ -177,13 +208,17 @@ const target = s.target ?? CFG.DEFAULT_TARGET;
 const socEst = s.soc === null ? null
     : Math.min(100, s.soc + CFG.SOC_EST_MAX_AHEAD, s.soc + s.energyKwh * CFG.EFFICIENCY / CFG.CAPACITY_KWH * 100);
 const depTs = nextDepartureTs();
-const detail = { wallbox: s.wallbox, enabled: s.enabled, soc: s.soc, target, departure: new Date(depTs).toISOString() };
+const awayDeparture = away !== null && depTs === away.start;
+const detail = { wallbox: s.wallbox, enabled: s.enabled, soc: s.soc, target, departure: new Date(depTs).toISOString(), awayDeparture };
 let amps = null;
 let reason;
 let look;
 let short;
 
-if (!s.enabled) {
+if (isAway) {
+    reason = `away, smart charging off until ${ddmm(away.resume)} ${hhmm(away.resume)}`;
+    look = LOOK.away; short = `Away until ${ddmm(away.resume)}`;
+} else if (!s.enabled) {
     reason = "smart charging off (manual)";
     look = LOOK.manual; short = "Manual";
 } else if (!PLUGGED.includes(s.wallbox)) {
@@ -249,7 +284,7 @@ detail.measuredA = s.measuredA;
 detail.socEst = socEst === null ? null : +socEst.toFixed(1);
 detail.amps = amps;
 detail.reason = reason;
-detail.summary = `${amps ?? "–"} A · ${reason} · SoC ${detail.socEst ?? "?"} % → ${target} % by ${hhmm(depTs)}`;
+detail.summary = `${amps ?? "–"} A · ${reason} · SoC ${detail.socEst ?? "?"} % → ${target} % by ${hhmm(depTs)}${awayDeparture ? " (away)" : ""}`;
 node.status({ fill: amps === 0 ? "yellow" : amps ? "green" : "grey", shape: "dot", text: detail.summary });
 const html = `<i class="${look}" aria-hidden="true"></i> ${short}`;
 
@@ -259,6 +294,6 @@ if (amps !== null && amps !== s.lastSent) {
     s.lastSent = amps;
 }
 const d = s.departure || parseDeparture(CFG.DEFAULT_DEPARTURE);
-const out3 = { topic: "departure", payload: `${String(d.h).padStart(2, "0")}:${String(d.m).padStart(2, "0")}` };
+const out3 = { topic: "departure", payload: awayDeparture ? hhmm(depTs) : `${String(d.h).padStart(2, "0")}:${String(d.m).padStart(2, "0")}` };
 context.set("s", s);
 return [out1, { topic: "departure_charging.status", payload: html, text: short, detail }, out3];
