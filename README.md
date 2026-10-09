@@ -4,6 +4,7 @@
 [![node-red-dashboard](https://img.shields.io/badge/node--red--dashboard-1.x-8F0000)](https://flows.nodered.org/node/node-red-dashboard)
 [![KNX](https://img.shields.io/badge/KNX-knx--ultimate-2E7D32)](https://flows.nodered.org/node/node-red-contrib-knx-ultimate)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **Your car is full when you leave, not hours earlier.**
 
@@ -253,3 +254,11 @@ node departure-charging/build-flow.mjs      # after editing departure-charging.j
 | `departure-charging/test/simulate.mjs` | Simulated charging nights with assertions |
 | `departure-charging/test/configure.test.mjs` | Tests for `configure.mjs` against an anonymised export |
 | `departure-charging/test/away.test.mjs` | Tests for the away period |
+
+## 📄 License
+
+[MIT](LICENSE) — free to use, modify and share, as long as the license notice is kept.
+
+This software controls real hardware. It is provided as is, without warranty of any kind:
+check the setpoints it sends to your wallbox and keep the safety functions of your wallbox
+and car in place.
