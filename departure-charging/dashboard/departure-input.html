@@ -7,7 +7,7 @@
 <div class="dc-departure">
     <label class="dc-departure__label" for="dc-departure-{{$id}}">Departure</label>
     <input class="dc-departure__time" id="dc-departure-{{$id}}" type="time" step="60" required
-           ng-model="departure" ng-change="changed()" ng-model-options="{ debounce: 800, timeSecondsFormat: '', timeStripZeroSeconds: true }">
+           ng-model="departure" ng-change="changed()" ng-model-options="{ debounce: 800, timeSecondsFormat: '' }">
 </div>
 
 <script>
